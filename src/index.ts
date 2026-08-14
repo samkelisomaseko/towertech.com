@@ -1,7 +1,6 @@
 import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import express from "express";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createApp, logger } from "./app.js";
 import { env } from "./config.js";
@@ -13,8 +12,6 @@ import { count } from "drizzle-orm";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = createApp();
-const publicDir = path.resolve(__dirname, "../public");
-app.use(express.static(publicDir, { index: "index.html", maxAge: "1h" }));
 
 const server = createServer(app);
 const port = env.PORT;

@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express, { Express } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -56,6 +58,10 @@ export function createApp(): Express {
   app.use("/api/ai", aiRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api/health", healthRoutes);
+
+  // Static files must be registered BEFORE the 404 handler so the SPA is actually served.
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  app.use(express.static(path.resolve(__dirname, "../public"), { index: "index.html", maxAge: "1h" }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);
