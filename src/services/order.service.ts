@@ -93,7 +93,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   const shippingEmail = (input.shipping.email || input.userId || "").toLowerCase();
 
   // -- Validate & lock stock --
-  const lockedProducts: Array<{ id: number; name: string; price: number; img: string | null; stock: number }> = [];
+  const lockedProducts: Array<{ id: number; name: string; price: number; img: string | null; stock: number; qty: number }> = [];
   for (const line of input.items) {
     if (!line.productId || line.qty < 1) throw new AppError(400, "Invalid cart line.", "INVALID_LINE");
     const [row] = await db
@@ -105,7 +105,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     if (row.stock < line.qty) {
       throw new AppError(409, `Insufficient stock for ${row.name}. Available: ${row.stock}`, "INSUFFICIENT_STOCK");
     }
-    lockedProducts.push({ id: row.id, name: row.name, price: Number(row.price), img: row.img, stock: row.stock });
+    lockedProducts.push({ id: row.id, name: row.name, price: Number(row.price), img: row.img, stock: row.stock, qty: line.qty });
   }
 
   // -- Coupon validation & discount --
@@ -117,7 +117,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     couponCode = coupon.code;
   }
 
-  const subtotal = Math.round(lockedProducts.reduce((acc, p) => acc + p.price, 0) * 100) / 100;
+  const subtotal = Math.round(lockedProducts.reduce((acc, p) => acc + p.price * p.qty, 0) * 100) / 100;
   const totals = computeTotals(subtotal, applyCouponToSubtotal(subtotal, discountFraction), couponCode);
 
   // -- Persist in a transaction --

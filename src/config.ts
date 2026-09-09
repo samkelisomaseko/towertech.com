@@ -40,7 +40,8 @@ const envSchema = z.object({
   // InstaCash gateway (endpoint + API key configured by the merchant). No public API spec exists,
   // so this stays configurable: the merchant supplies the real collection endpoint + key.
   INSTACASH_ENDPOINT: z.string().url().optional(),
-  INSTACASH_API_KEY: z.string().optional()
+  INSTACASH_API_KEY: z.string().optional(),
+  WEBHOOK_SECRET: z.string().optional()
 });
 
 const DEV_JWT_SECRET = "dev-secret-change-me-in-production-0123456789";

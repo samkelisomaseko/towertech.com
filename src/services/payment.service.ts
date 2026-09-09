@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { env } from "../config.js";
 import { db } from "../db/index.js";
 import { settings } from "../db/schema.js";
@@ -83,6 +83,25 @@ async function getMomoConfig(): Promise<MoMoConfig> {
 async function getInstaConfig(): Promise<InstaConfig> {
   const [endpoint, apiKey] = await Promise.all([getSetting("instaEndpoint"), getSetting("instaApiKey")]);
   return { endpoint: endpoint ?? env.INSTACASH_ENDPOINT, apiKey: apiKey ?? env.INSTACASH_API_KEY };
+}
+
+/**
+ * Fetch the shared webhook secret (admin-configurable) with env fallback.
+ * Returns null if neither is set — callers MUST reject with 401 when null.
+ */
+export async function getWebhookSecret(): Promise<string | null> {
+  const setting = await getSetting("webhookSecret");
+  return setting ?? env.WEBHOOK_SECRET ?? null;
+}
+
+/**
+ * Constant-time compare of two strings. Returns false on length mismatch (no exception).
+ */
+export function verifyWebhookSecret(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 let momoToken: { token: string; expiresAt: number } | null = null;
