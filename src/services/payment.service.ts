@@ -6,6 +6,7 @@ import { settings } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { AppError } from "../lib/http.js";
+import { normalizeMomoProviderStatus } from "./payment-webhooks.js";
 
 let stripe: Stripe | null = null;
 
@@ -63,26 +64,23 @@ interface InstaConfig {
 }
 
 async function getMomoConfig(): Promise<MoMoConfig> {
-  const [subKey, apiUser, apiKey, environment, callbackUrl] = await Promise.all([
-    getSetting("momoSubscriptionKey"),
-    getSetting("momoApiUser"),
-    getSetting("momoApiKey"),
+  const [environment, callbackUrl] = await Promise.all([
     getSetting("momoEnvironment"),
     getSetting("momoCallbackUrl")
   ]);
   return {
     collectionUrl: env.MOMO_COLLECTION_URL,
-    subscriptionKey: subKey ?? env.MOMO_SUBSCRIPTION_KEY,
-    apiUser: apiUser ?? env.MOMO_API_USER,
-    apiKey: apiKey ?? env.MOMO_API_KEY,
+    subscriptionKey: env.MOMO_SUBSCRIPTION_KEY,
+    apiUser: env.MOMO_API_USER,
+    apiKey: env.MOMO_API_KEY,
     environment: environment ?? env.MOMO_TARGET_ENVIRONMENT,
     callbackUrl: callbackUrl ?? env.MOMO_CALLBACK_URL
   };
 }
 
 async function getInstaConfig(): Promise<InstaConfig> {
-  const [endpoint, apiKey] = await Promise.all([getSetting("instaEndpoint"), getSetting("instaApiKey")]);
-  return { endpoint: endpoint ?? env.INSTACASH_ENDPOINT, apiKey: apiKey ?? env.INSTACASH_API_KEY };
+  const endpoint = await getSetting("instaEndpoint");
+  return { endpoint: endpoint ?? env.INSTACASH_ENDPOINT, apiKey: env.INSTACASH_API_KEY };
 }
 
 let momoToken: { token: string; expiresAt: number } | null = null;
@@ -100,7 +98,7 @@ export function normalizeEswatiniMsisdn(raw: string): string {
 async function getMoMoToken(): Promise<{ token: string; expiresAt: number }> {
   const cfg = await getMomoConfig();
   if (!cfg.subscriptionKey || !cfg.apiUser || !cfg.apiKey) {
-    throw new AppError(503, "MTN MoMo is not configured. Add API credentials in admin settings.", "MOMO_NOT_CONFIGURED");
+    throw new AppError(503, "MTN MoMo is not configured. Add API credentials to environment configuration.", "MOMO_NOT_CONFIGURED");
   }
   const basic = Buffer.from(`${cfg.apiUser}:${cfg.apiKey}`).toString("base64");
   const res = await fetch(`${cfg.collectionUrl.replace(/\/$/, "")}/token/`, {
@@ -121,6 +119,77 @@ async function getMoMoToken(): Promise<{ token: string; expiresAt: number }> {
   if (!data.access_token) throw new AppError(502, "MTN MoMo did not return an access token.", "MOMO_TOKEN_ERROR");
   const expiresIn = Number(data.expires_in ?? 3600) * 1000;
   return { token: data.access_token, expiresAt: Date.now() + expiresIn };
+}
+
+export type MomoTransactionStatus = "SUCCESSFUL" | "PENDING" | "FAILED" | "REJECTED" | "TIMEOUT" | "UNKNOWN";
+
+export interface MomoTransaction {
+  status: MomoTransactionStatus;
+  amount?: number;
+  currency?: string;
+  externalId?: string;
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * Ask MTN for the authoritative state of a request-to-pay. This is the only MoMo
+ * state the application may act on; the callback body/header is untrusted input.
+ */
+export async function getMomoTransactionStatus(referenceId: string): Promise<MomoTransaction> {
+  const cfg = await getMomoConfig();
+  if (!momoToken || momoToken.expiresAt < Date.now()) {
+    momoToken = await getMoMoToken();
+  }
+
+  const res = await fetch(
+    `${cfg.collectionUrl.replace(/\/$/, "")}/v1_0/requesttopay/${encodeURIComponent(referenceId)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${momoToken.token}`,
+        "X-Target-Environment": cfg.environment,
+        "Ocp-Apim-Subscription-Key": cfg.subscriptionKey ?? ""
+      }
+    }
+  );
+  if (res.status === 404) {
+    throw new AppError(502, "MTN MoMo has no record of this payment reference.", "MOMO_REFERENCE_UNKNOWN");
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    logger.warn({ status: res.status, body, referenceId }, "MTN MoMo transaction lookup failed");
+    throw new AppError(502, "MTN MoMo could not confirm the payment status.", "MOMO_STATUS_ERROR");
+  }
+
+  const data = (await res.json()) as {
+    status?: unknown;
+    amount?: unknown;
+    currency?: unknown;
+    externalId?: unknown;
+  };
+  const normalized = normalizeMomoProviderStatus(data.status);
+  const status: MomoTransactionStatus =
+    normalized === "SUCCESSFUL" ||
+    normalized === "PENDING" ||
+    normalized === "FAILED" ||
+    normalized === "REJECTED" ||
+    normalized === "TIMEOUT"
+      ? normalized
+      : "UNKNOWN";
+
+  return {
+    status,
+    amount: toFiniteNumber(data.amount),
+    currency: asOptionalString(data.currency)?.toUpperCase(),
+    externalId: asOptionalString(data.externalId)
+  };
 }
 
 /** Initiate a MoMo Collection request-to-pay. Returns the X-Reference-Id used to track status. */
@@ -213,7 +282,7 @@ export async function createPaymentIntent(input: CreatePaymentIntentInput): Prom
   // InstaCash — configurable gateway adapter. Real merchant endpoint required.
   const insta = await getInstaConfig();
   if (!insta.endpoint || !insta.apiKey) {
-    throw new AppError(503, "InstaCash is not configured. Add the gateway endpoint and API key in admin settings.", "INSTACASH_NOT_CONFIGURED");
+    throw new AppError(503, "InstaCash is not configured. Add the gateway endpoint and API key to environment configuration.", "INSTACASH_NOT_CONFIGURED");
   }
   if (!input.paymentNumber) throw new AppError(400, "A mobile number is required for InstaCash.", "MSISDN_REQUIRED");
   const msisdn = normalizeEswatiniMsisdn(input.paymentNumber);

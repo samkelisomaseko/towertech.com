@@ -1,42 +1,51 @@
 import { createServer } from "node:http";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createApp, logger } from "./app.js";
 import { env } from "./config.js";
-import { db, pingDatabase, pool } from "./db/index.js";
+import { pingDatabase, pool } from "./db/index.js";
+import { runMigrations } from "./db/migrate.js";
+import { db } from "./db/index.js";
 import { products } from "./db/schema.js";
 import { runSeed } from "./db/seed.js";
 import { count } from "drizzle-orm";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const app = createApp();
 
 const server = createServer(app);
+// Node's defaults (5s) are shorter than common LB idle timeouts; keep the
+// socket alive a little longer than a 60s load-balancer cutoff.
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
 const port = env.PORT;
 
 server.listen(port, async () => {
   const dbUp = await pingDatabase();
-  logger.info({ port, env: env.NODE_ENV, db: dbUp ? "connected" : "UNAVAILABLE" }, "TowerTech server started");
   if (!dbUp) {
-    logger.warn("Database unreachable — verify DATABASE_URL and run migrations.");
-    return;
+    logger.error("Database unreachable — refusing to serve without a database. Verify DATABASE_URL and run migrations.");
+    process.exit(1);
   }
+  logger.info({ port, env: env.NODE_ENV, db: "connected" }, "TowerTech server started");
 
   try {
-    // Apply schema migrations and seed an empty catalog on boot.
-    await migrate(db, { migrationsFolder: path.resolve(__dirname, "../drizzle") });
-    logger.info("Migrations applied.");
+    if (env.DB_AUTO_MIGRATE) {
+      await runMigrations();
+      logger.info("Migrations applied.");
+    } else {
+      logger.info("DB_AUTO_MIGRATE=false — skipping boot migrations (deploy step owns DDL).");
+    }
 
-    const [{ value: productCount }] = await db.select({ value: count() }).from(products);
-    if (productCount === 0) {
-      logger.info("Empty catalog detected — seeding...");
-      await runSeed();
-      logger.info("Seed complete.");
+    if (env.DB_AUTO_SEED) {
+      const [{ value: productCount }] = await db.select({ value: count() }).from(products);
+      if (productCount === 0) {
+        logger.info("Empty catalog detected — seeding...");
+        await runSeed();
+        logger.info("Seed complete.");
+      }
+    } else {
+      logger.info("DB_AUTO_SEED=false — skipping boot seeding.");
     }
   } catch (err) {
     logger.error({ err }, "Bootstrap (migrate/seed) failed");
+    process.exit(1);
   }
 });
 

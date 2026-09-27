@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { users, NewUser, User } from "../db/schema.js";
-import { AppError, NotFoundError, UnauthorizedError } from "../lib/http.js";
+import { AppError, UnauthorizedError } from "../lib/http.js";
 import { hashPassword, verifyPassword } from "../lib/crypto.js";
-import { signSession, SessionPayload } from "../lib/jwt.js";
+import { signSession, SessionPayload, verifySession } from "../lib/jwt.js";
 
 export function toPublicUser(u: User) {
   return { email: u.email, name: u.name, role: u.role, status: u.status, createdAt: u.createdAt };
@@ -12,6 +12,29 @@ export function toPublicUser(u: User) {
 export async function findByEmail(email: string): Promise<User | undefined> {
   const [row] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
   return row;
+}
+
+/**
+ * Convert a current user row into the session carried on the request. Role and
+ * status are always taken from the database so bans, restores, promotions, and
+ * demotions take effect immediately instead of lingering in an old JWT.
+ */
+export function toActiveSessionUser(user: User | undefined): SessionPayload | null {
+  if (!user || user.status !== "active") return null;
+  return {
+    sub: user.email,
+    name: user.name,
+    role: user.role === "admin" ? "admin" : "user"
+  };
+}
+
+export async function authorizeSession(
+  token: string,
+  lookupUser: (email: string) => Promise<User | undefined> = findByEmail
+): Promise<SessionPayload | null> {
+  const session = verifySession(token);
+  if (!session) return null;
+  return toActiveSessionUser(await lookupUser(session.sub));
 }
 
 export async function register(input: { name: string; email: string; password: string }): Promise<{ user: ReturnType<typeof toPublicUser> }> {
@@ -63,5 +86,3 @@ export async function getSessionUser(email: string): Promise<ReturnType<typeof t
   if (!user || user.status === "banned") return null;
   return toPublicUser(user);
 }
-
-export { NotFoundError };

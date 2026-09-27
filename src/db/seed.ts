@@ -1,7 +1,9 @@
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { inArray } from "drizzle-orm";
 import { db } from "./index.js";
 import { products, users, coupons, settings } from "./schema.js";
+import { MANAGED_SETTING_SECRET_KEYS } from "../services/payment-credentials.js";
 import { env } from "../config.js";
 import { hashPassword } from "../lib/crypto.js";
 
@@ -72,14 +74,9 @@ export async function runSeed(): Promise<void> {
         desc: "Electronics, computing, and accessories — delivered across Eswatini. Trusted quality, fair prices, fast delivery."
       })
     },
-    { key: "stripeKey", value: env.STRIPE_PUBLISHABLE_KEY ?? "" },
-    { key: "momoSubscriptionKey", value: env.MOMO_SUBSCRIPTION_KEY ?? "" },
-    { key: "momoApiUser", value: env.MOMO_API_USER ?? "" },
-    { key: "momoApiKey", value: env.MOMO_API_KEY ?? "" },
     { key: "momoEnvironment", value: env.MOMO_TARGET_ENVIRONMENT ?? "sandbox" },
     { key: "momoCallbackUrl", value: env.MOMO_CALLBACK_URL ?? "" },
-    { key: "instaEndpoint", value: env.INSTACASH_ENDPOINT ?? "" },
-    { key: "instaApiKey", value: env.INSTACASH_API_KEY ?? "" }
+    { key: "instaEndpoint", value: env.INSTACASH_ENDPOINT ?? "" }
   ];
   for (const s of settingsRows) {
     await db
@@ -87,6 +84,10 @@ export async function runSeed(): Promise<void> {
       .values({ ...s, updatedAt: new Date() })
       .onConflictDoNothing();
   }
+
+  // Remove legacy runtime payment secrets. Credentials are now managed only through
+  // environment/secret-manager configuration.
+  await db.delete(settings).where(inArray(settings.key, [...MANAGED_SETTING_SECRET_KEYS]));
 
   console.log("✅ Seed complete.");
 }

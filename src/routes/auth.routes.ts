@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Response, Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../lib/http.js";
 import { validateBody } from "../middleware/validate.js";
@@ -20,7 +20,7 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required.")
 });
 
-function setSessionCookie(res: any, token: string) {
+function setSessionCookie(res: Response, token: string) {
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: env.COOKIE_SECURE,
@@ -54,7 +54,12 @@ router.post(
 router.post(
   "/logout",
   asyncHandler(async (_req, res) => {
-    res.clearCookie(SESSION_COOKIE, { path: "/" });
+    res.clearCookie(SESSION_COOKIE, {
+      httpOnly: true,
+      secure: env.COOKIE_SECURE,
+      sameSite: env.COOKIE_SAMESITE,
+      path: "/"
+    });
     res.json({ ok: true });
   })
 );
@@ -65,7 +70,12 @@ router.get(
   asyncHandler(async (req, res) => {
     const user = await getSessionUser(req.user!.sub);
     if (!user) {
-      res.clearCookie(SESSION_COOKIE, { path: "/" });
+      res.clearCookie(SESSION_COOKIE, {
+        httpOnly: true,
+        secure: env.COOKIE_SECURE,
+        sameSite: env.COOKIE_SAMESITE,
+        path: "/"
+      });
       res.status(401).json({ error: "Session expired.", code: "SESSION_EXPIRED" });
       return;
     }

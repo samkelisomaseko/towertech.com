@@ -1,9 +1,9 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { db } from "../db/index.js";
 import { orderItems, orders, products, coupons, notifications } from "../db/schema.js";
 import { AppError, NotFoundError } from "../lib/http.js";
-import { validateCoupon } from "./coupon.service.js";
+import { logger } from "../lib/logger.js";
 import { createPaymentIntent, PaymentProviderResult } from "./payment.service.js";
 import { sendOrderConfirmation } from "./email.service.js";
 
@@ -32,6 +32,14 @@ export function computeTotals(subtotal: number, couponDiscount: number, couponCo
   const discount = Math.min(Math.round(couponDiscount * 100) / 100, subtotal);
   const total = Math.round((subtotal + tax - discount) * 100) / 100;
   return { subtotal, tax, discount, total, couponCode, couponDiscount };
+}
+
+/**
+ * Compute a cart subtotal from priced lines. Kept separate from DB so quantity
+ * handling can be unit-tested without a database.
+ */
+export function computeSubtotal(lines: Array<{ price: number; qty: number }>): number {
+  return Math.round(lines.reduce((acc, line) => acc + line.price * line.qty, 0) * 100) / 100;
 }
 
 /**
@@ -78,51 +86,54 @@ function generateOrderId(): string {
 }
 
 /**
- * Creates an order atomically:
- *  1. Validates all products exist and have sufficient stock (row locks held until commit).
- *  2. Recomputes totals server-side (never trusts the client).
- *  3. Decrements stock and records order + line items in a single transaction.
- *  4. Attempts payment capture (real Stripe PaymentIntent for card, MTN MoMo Collection
- *     request-to-pay for MoMo, configurable gateway adapter for InstaCash).
- *  5. Enqueues a confirmation email + in-app notification.
+ * Creates an order as a pending payment reservation:
+ *  1. Validates products without holding row locks outside a transaction.
+ *  2. Recomputes quantity-aware totals server-side (never trusts the client).
+ *  3. Atomically locks products, decrements stock, claims coupon use, and records
+ *     the order plus line items in a single transaction.
+ *  4. Attempts payment initiation outside the transaction.
+ *  5. Releases the reservation if payment initiation fails, so inventory and coupon
+ *     use are not permanently consumed by an unpaid order.
+ *  6. Enqueues a confirmation email + in-app notification.
  */
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
   if (!input.items.length) throw new AppError(400, "Cart is empty.", "EMPTY_CART");
 
   const orderId = generateOrderId();
   const shippingEmail = (input.shipping.email || input.userId || "").toLowerCase();
+  const normalizedCouponCode = input.couponCode?.trim().toUpperCase();
 
-  // -- Validate & lock stock --
-  const lockedProducts: Array<{ id: number; name: string; price: number; img: string | null; stock: number }> = [];
+  // -- Validate products without holding row locks outside the transaction --
+  const lockedProducts: Array<{
+    id: number;
+    name: string;
+    price: number;
+    img: string | null;
+    stock: number;
+    qty: number;
+  }> = [];
   for (const line of input.items) {
-    if (!line.productId || line.qty < 1) throw new AppError(400, "Invalid cart line.", "INVALID_LINE");
-    const [row] = await db
-      .select()
-      .from(products)
-      .where(eq(products.id, line.productId))
-      .for("update");
+    if (!line.productId || !Number.isInteger(line.qty) || line.qty < 1) {
+      throw new AppError(400, "Invalid cart line.", "INVALID_LINE");
+    }
+    const [row] = await db.select().from(products).where(eq(products.id, line.productId));
     if (!row) throw new NotFoundError("Product");
     if (row.stock < line.qty) {
       throw new AppError(409, `Insufficient stock for ${row.name}. Available: ${row.stock}`, "INSUFFICIENT_STOCK");
     }
-    lockedProducts.push({ id: row.id, name: row.name, price: Number(row.price), img: row.img, stock: row.stock });
+    lockedProducts.push({
+      id: row.id,
+      name: row.name,
+      price: Number(row.price),
+      img: row.img,
+      stock: row.stock,
+      qty: line.qty
+    });
   }
 
-  // -- Coupon validation & discount --
-  let discountFraction = 0;
-  let couponCode: string | undefined;
-  if (input.couponCode) {
-    const coupon = await validateCoupon(input.couponCode);
-    discountFraction = coupon.discount;
-    couponCode = coupon.code;
-  }
-
-  const subtotal = Math.round(lockedProducts.reduce((acc, p) => acc + p.price, 0) * 100) / 100;
-  const totals = computeTotals(subtotal, applyCouponToSubtotal(subtotal, discountFraction), couponCode);
-
-  // -- Persist in a transaction --
+  // -- Persist the reservation in a transaction --
   const result = await db.transaction(async (tx) => {
-    // Re-lock and decrement stock within the transaction for atomicity.
+    // Lock and decrement stock within the transaction for atomicity.
     for (const line of input.items) {
       const [row] = await tx.select().from(products).where(eq(products.id, line.productId)).for("update");
       if (!row) throw new NotFoundError("Product");
@@ -135,13 +146,36 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         .where(eq(products.id, line.productId));
     }
 
-    if (couponCode) {
-      await tx
+    let discountFraction = 0;
+    let couponCode: string | undefined;
+    if (normalizedCouponCode) {
+      const [claimedCoupon] = await tx
         .update(coupons)
         .set({ uses: sql`${coupons.uses} + 1` })
-        .where(eq(coupons.code, couponCode));
+        .where(
+          and(
+            eq(coupons.code, normalizedCouponCode),
+            eq(coupons.active, true),
+            or(isNull(coupons.expiresAt), gt(coupons.expiresAt, new Date())),
+            or(isNull(coupons.maxUses), sql`${coupons.uses} < ${coupons.maxUses}`)
+          )
+        )
+        .returning();
+      if (!claimedCoupon) {
+        const [existingCoupon] = await tx.select().from(coupons).where(eq(coupons.code, normalizedCouponCode));
+        if (!existingCoupon) throw new NotFoundError("Coupon");
+        if (!existingCoupon.active) throw new AppError(400, "Coupon is inactive.", "COUPON_INACTIVE");
+        if (existingCoupon.expiresAt && existingCoupon.expiresAt < new Date()) {
+          throw new AppError(400, "Coupon has expired.", "COUPON_EXPIRED");
+        }
+        throw new AppError(400, "Coupon usage limit reached.", "COUPON_LIMIT");
+      }
+      discountFraction = Number(claimedCoupon.discount);
+      couponCode = claimedCoupon.code;
     }
 
+    const subtotal = computeSubtotal(lockedProducts);
+    const totals = computeTotals(subtotal, applyCouponToSubtotal(subtotal, discountFraction), couponCode);
     const now = new Date();
     const [order] = await tx
       .insert(orders)
@@ -161,27 +195,26 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       })
       .returning();
 
-    for (const line of input.items) {
-      const p = lockedProducts.find((x) => x.id === line.productId)!;
+    for (const line of lockedProducts) {
       await tx.insert(orderItems).values({
         orderId,
-        productId: p.id,
-        name: p.name,
-        price: p.price.toFixed(2),
-        img: p.img,
+        productId: line.id,
+        name: line.name,
+        price: line.price.toFixed(2),
+        img: line.img,
         qty: line.qty
       });
     }
 
-    return { order, now };
+    return { order, totals, couponCode, now };
   });
 
-  // -- Payment capture --
+  // -- Payment initiation --
   let payment: PaymentProviderResult | null = null;
   try {
     payment = await createPaymentIntent({
       method: input.paymentMethod,
-      amount: totals.total,
+      amount: result.totals.total,
       orderId,
       currency: "szl",
       email: shippingEmail,
@@ -190,12 +223,18 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     if (payment && payment.paymentIntentId) {
       await db
         .update(orders)
-        .set({ paymentIntentId: payment.paymentIntentId, paymentStatus: payment.status ?? "pending" })
+        .set({
+          paymentIntentId: payment.paymentIntentId,
+          paymentStatus: payment.status === "succeeded" ? "paid" : "pending",
+          updatedAt: new Date()
+        })
         .where(eq(orders.id, orderId));
     }
-  } catch {
-    // Payment failure should not silently lose the order; mark as failed and surface.
-    await db.update(orders).set({ paymentStatus: "failed" }).where(eq(orders.id, orderId));
+  } catch (err) {
+    // Payment initiation failure must release the reservation rather than leave
+    // inventory and coupon use consumed by an order that cannot be paid.
+    await releaseReservedOrder(orderId);
+    logger.warn({ err, orderId }, "Payment initiation failed; order reservation released");
     throw new AppError(502, "Payment could not be processed. Your order was not completed.", "PAYMENT_FAILED");
   }
 
@@ -207,16 +246,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     status: result.order.status,
     paymentMethod: result.order.paymentMethod ?? "",
     paymentStatus: result.order.paymentStatus ?? "pending",
-    subtotal: totals.subtotal,
-    tax: totals.tax,
-    discount: totals.discount,
-    total: totals.total,
-    couponCode: couponCode ?? null,
+    subtotal: result.totals.subtotal,
+    tax: result.totals.tax,
+    discount: result.totals.discount,
+    total: result.totals.total,
+    couponCode: result.couponCode ?? null,
     shipping: input.shipping,
-    items: input.items.map((l) => {
-      const p = lockedProducts.find((x) => x.id === l.productId)!;
-      return { productId: p.id, name: p.name, price: p.price, qty: l.qty };
-    }),
+    items: lockedProducts.map((p) => ({ productId: p.id, name: p.name, price: p.price, qty: p.qty })),
     createdAt: result.now
   };
 
@@ -229,12 +265,53 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       .values({
         userId: input.userId,
         title: "Order Confirmed",
-        msg: `Order #${orderId.substring(0, 8)} received. Total: E${totals.total.toFixed(2)}`
+        msg: `Order #${orderId.substring(0, 8)} received. Total: E${result.totals.total.toFixed(2)}`
       })
       .catch(() => undefined);
   }
 
   return { order: payload, payment };
+}
+
+/**
+ * Release a pending order reservation after a known payment failure. The row lock
+ * makes concurrent paid/failed transitions resolve to exactly one outcome.
+ */
+export async function releaseReservedOrder(orderId: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
+    if (!order || order.paymentStatus !== "pending") return false;
+
+    const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+    for (const item of items) {
+      const [product] = await tx
+        .select()
+        .from(products)
+        .where(eq(products.id, item.productId))
+        .for("update");
+      if (!product) {
+        logger.warn({ orderId, productId: item.productId }, "Product missing while releasing reservation");
+        continue;
+      }
+      await tx
+        .update(products)
+        .set({ stock: product.stock + item.qty, updatedAt: new Date() })
+        .where(eq(products.id, item.productId));
+    }
+
+    if (order.couponCode) {
+      await tx
+        .update(coupons)
+        .set({ uses: sql`GREATEST(${coupons.uses} - 1, 0)` })
+        .where(eq(coupons.code, order.couponCode));
+    }
+
+    await tx
+      .update(orders)
+      .set({ paymentStatus: "failed", updatedAt: new Date() })
+      .where(and(eq(orders.id, orderId), eq(orders.paymentStatus, "pending")));
+    return true;
+  });
 }
 
 export async function getOrderById(id: string): Promise<OrderPayload | null> {
@@ -276,8 +353,4 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
   if (!existing) throw new NotFoundError("Order");
   await db.update(orders).set({ status, updatedAt: new Date() }).where(eq(orders.id, id));
   return { ...existing, status };
-}
-
-export function isOrderOwner(order: OrderPayload, email: string | undefined): boolean {
-  return !order.isGuest && order.userId === email;
 }

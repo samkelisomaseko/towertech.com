@@ -35,7 +35,7 @@ export async function sendOrderConfirmation(
   }
   try {
     const itemsHtml = order.items
-      .map((i) => `<li>${i.qty} × ${i.name} — E${i.price.toFixed(2)}</li>`)
+      .map((i) => `<li>${i.qty} × ${escapeHtml(i.name)} — E${i.price.toFixed(2)}</li>`)
       .join("");
     await t.sendMail({
       from: env.SMTP_FROM,
@@ -44,7 +44,7 @@ export async function sendOrderConfirmation(
       html: `
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
           <h2>Order Confirmed — TowerTech</h2>
-          <p>Hi ${order.name ?? "there"}, your order <strong>${order.id}</strong> has been received.</p>
+          <p>Hi ${escapeHtml(order.name ?? "there")}, your order <strong>${escapeHtml(order.id)}</strong> has been received.</p>
           <ul>${itemsHtml}</ul>
           <p>Total: <strong>E${order.total.toFixed(2)}</strong></p>
         </div>`
@@ -54,6 +54,15 @@ export async function sendOrderConfirmation(
     logger.error({ err }, "Failed to send order confirmation email");
     return false;
   }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 export async function sendContactNotification(to: string, type: "contact" | "bug", body: string): Promise<boolean> {

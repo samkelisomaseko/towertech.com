@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
+import { logger } from "./logger.js";
 
 export class AppError extends Error {
   public readonly status: number;
@@ -72,7 +73,6 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return;
   }
 
-  // eslint-disable-next-line no-console
-  console.error("[UnhandledError]", err);
+  logger.error({ err }, "[UnhandledError]");
   res.status(500).json({ error: "Internal server error.", code: "INTERNAL" });
 }

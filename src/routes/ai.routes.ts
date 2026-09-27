@@ -23,7 +23,7 @@ router.post(
   requireAuth,
   validateBody(chatSchema),
   asyncHandler(async (req, res) => {
-    const isAdmin = (req as any).user?.role === "admin";
+    const isAdmin = req.user?.role === "admin";
     const reply = await processAiIntent(req.body.message, {
       ...(req.body.context ?? {}),
       isAdmin

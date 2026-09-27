@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
-import { verifySession, SessionPayload } from "../lib/jwt.js";
+import { SessionPayload } from "../lib/jwt.js";
 import { ForbiddenError, UnauthorizedError } from "../lib/http.js";
+import { authorizeSession } from "../services/auth.service.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -15,20 +16,34 @@ export const SESSION_COOKIE = "tt_session";
 
 export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
   const token = req.cookies?.[SESSION_COOKIE];
-  const user = token ? verifySession(token) : null;
-  if (!user) {
+  if (typeof token !== "string" || !token) {
     next(new UnauthorizedError());
     return;
   }
-  req.user = user;
-  next();
+  authorizeSession(token)
+    .then((user) => {
+      if (!user) {
+        next(new UnauthorizedError());
+        return;
+      }
+      req.user = user;
+      next();
+    })
+    .catch(next);
 }
 
 export function optionalAuth(req: Request, _res: Response, next: NextFunction): void {
   const token = req.cookies?.[SESSION_COOKIE];
-  const user = token ? verifySession(token) : null;
-  if (user) req.user = user;
-  next();
+  if (typeof token !== "string" || !token) {
+    next();
+    return;
+  }
+  authorizeSession(token)
+    .then((user) => {
+      if (user) req.user = user;
+      next();
+    })
+    .catch(next);
 }
 
 export function requireAdmin(req: Request, _res: Response, next: NextFunction): void {
