@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { coupons, Coupon } from "../db/schema.js";
 import { AppError, NotFoundError } from "../lib/http.js";
@@ -68,11 +68,4 @@ export async function deleteCoupon(code: string): Promise<void> {
   const existing = await db.select().from(coupons).where(eq(coupons.code, code.toUpperCase()));
   if (!existing.length) throw new NotFoundError("Coupon");
   await db.delete(coupons).where(eq(coupons.code, code.toUpperCase()));
-}
-
-export async function incrementCouponUsage(code: string): Promise<void> {
-  await db
-    .update(coupons)
-    .set({ uses: sql`${coupons.uses} + 1` })
-    .where(eq(coupons.code, code.toUpperCase()));
 }

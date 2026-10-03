@@ -25,6 +25,7 @@ export function validateParams(schema: z.ZodTypeAny) {
       next(new ValidationError(flattenZod(result.error)));
       return;
     }
+    req.params = result.data;
     next();
   };
 }
@@ -36,6 +37,10 @@ export function validateQuery(schema: z.ZodTypeAny) {
       next(new ValidationError(flattenZod(result.error)));
       return;
     }
+    // req.query is getter-only in Express 4, so merge the coerced values in place
+    // instead of replacing the object.
+    for (const key of Object.keys(req.query)) delete (req.query as Record<string, unknown>)[key];
+    Object.assign(req.query, result.data);
     next();
   };
 }

@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://towertech:towertech@localhost:5432/towertech
+      JWT_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
+      ADMIN_PASSWORD: ci-only-admin-password-01
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

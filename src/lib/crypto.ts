@@ -21,6 +21,10 @@ export function verifyPassword(password: string, stored: string): boolean {
     const n = parseInt(nStr, 10);
     const r = parseInt(rStr, 10);
     const p = parseInt(pStr, 10);
+    // Only the exact parameters this service writes are accepted. Stored hashes are
+    // server-generated, so anything else is malformed input — and honoring arbitrary
+    // cost parameters would let a crafted hash demand gigabytes of memory.
+    if (n !== SCRYPT_N || r !== SCRYPT_R || p !== SCRYPT_P) return false;
     const actual = scryptSync(password, salt, KEY_LEN, { N: n, r, p });
     const expected = Buffer.from(expectedHash, "hex");
     return actual.length === expected.length && timingSafeEqual(actual, expected);

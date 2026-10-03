@@ -4,13 +4,21 @@ import { db } from "../db/index.js";
 import { NewProduct, Product, products } from "../db/schema.js";
 import { AppError, NotFoundError } from "../lib/http.js";
 
+const imageUrlSchema = z
+  .string()
+  .url("Image must be a valid URL.")
+  .max(2048)
+  .refine((value) => value.startsWith("http://") || value.startsWith("https://"), {
+    message: "Image URL must use http or https."
+  });
+
 export const productInputSchema = z.object({
   name: z.string().min(1, "Name is required.").max(200),
   price: z.coerce.number().positive().multipleOf(0.01),
   stock: z.coerce.number().int().min(0).default(0),
   category: z.string().min(1, "Category is required.").max(100),
-  img: z.string().url("Image must be a valid URL.").or(z.literal("")).optional().default(""),
-  images: z.array(z.string().url()).optional().default([]),
+  img: imageUrlSchema.or(z.literal("")).optional().default(""),
+  images: z.array(imageUrlSchema).max(20).optional().default([]),
   desc: z.string().default(""),
   specs: z.record(z.string(), z.string()).optional().default({}),
   sku: z.string().optional(),

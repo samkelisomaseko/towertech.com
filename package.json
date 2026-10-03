@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:dist": "node dist/db/migrate.js",
     "db:seed": "tsx src/db/seed.ts",
     "db:studio": "drizzle-kit studio"
   },

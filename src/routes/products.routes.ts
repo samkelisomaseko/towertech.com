@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { asyncHandler, NotFoundError } from "../lib/http.js";
+import { asyncHandler } from "../lib/http.js";
 import { validateBody, validateParams, validateQuery } from "../middleware/validate.js";
 import { requireAdmin, requireAuth, optionalAuth } from "../middleware/auth.js";
 import { createProduct, deleteProduct, getAllProducts, getProduct, listProducts, productInputSchema, productQuerySchema, updateProduct } from "../services/product.service.js";
@@ -16,7 +16,8 @@ router.get(
   "/",
   validateQuery(productQuerySchema),
   asyncHandler(async (req, res) => {
-    const products = await listProducts(req.query as never);
+    // validateQuery has already coerced req.query in place, so this cast is honest.
+    const products = await listProducts(req.query as unknown as z.infer<typeof productQuerySchema>);
     res.json({ products });
   })
 );
@@ -102,8 +103,7 @@ router.post(
   validateBody(reviewSchema),
   asyncHandler(async (req, res) => {
     const pid = Number(req.params.id);
-    const product = await getProduct(pid);
-    if (!product) throw new NotFoundError("Product");
+    await getProduct(pid); // throws 404 when missing
     const name = req.user!.name;
     const now = new Date();
     const [row] = await db

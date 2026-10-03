@@ -13,6 +13,27 @@
             div.textContent = str;
             return div.innerHTML;
         },
+        // Attribute context: escape() does NOT escape quotes, so never use it
+        // inside src="...", onclick="..." or similar.
+        escapeAttr: (str) => {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        },
+        // Single-quoted JS string inside an HTML attribute: backslash-escape the
+        // string terminator and line breaks, neutralize angle brackets.
+        escapeJs: (str) => {
+            return String(str)
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/</g, '\\x3c')
+                .replace(/>/g, '\\x3e');
+        },
         validateEmail: (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
         validatePhone: (phone) => /^\+?[0-9\s-]{8,}$/.test(phone),
         debounce: (func, wait) => {
@@ -616,7 +637,7 @@
 
         async loadStripe() {
             const publicSettings = app.db._publicSettings || {};
-            const key = publicSettings.stripeKey || null;
+            const key = publicSettings.stripePublishableKey || null;
             if (!key) return null;
             if (!window.Stripe) {
                 await new Promise((resolve, reject) => {
@@ -824,18 +845,6 @@
             });
 
             // Settings Fields
-            const stripeKey = settings.find(s => s.id === 'stripeKey');
-            if(stripeKey) Utils.$('#set-stripe').value = stripeKey.value;
-
-            const momoSub = settings.find(s => s.id === 'momoSubscriptionKey');
-            if(momoSub) Utils.$('#set-momo-sub').value = momoSub.value;
-
-            const momoUser = settings.find(s => s.id === 'momoApiUser');
-            if(momoUser) Utils.$('#set-momo-user').value = momoUser.value;
-
-            const momoKey = settings.find(s => s.id === 'momoApiKey');
-            if(momoKey) Utils.$('#set-momo-key').value = momoKey.value;
-
             const momoEnv = settings.find(s => s.id === 'momoEnvironment');
             if(momoEnv) Utils.$('#set-momo-env').value = momoEnv.value;
 
@@ -844,9 +853,6 @@
 
             const instaEndpoint = settings.find(s => s.id === 'instaEndpoint');
             if(instaEndpoint) Utils.$('#set-insta-endpoint').value = instaEndpoint.value;
-
-            const instaKey = settings.find(s => s.id === 'instaApiKey');
-            if(instaKey) Utils.$('#set-insta-key').value = instaKey.value;
             
             // Hero Config
             const hero = settings.find(s => s.id === 'hero_config');
@@ -1289,7 +1295,7 @@
             return `
                 <div class="glass-panel product-card" onclick="app.router.go('product', {id: ${p.id}})">                    
                     <div class="p-img-container">
-                        <img src="${p.img}" class="p-img" loading="lazy" onload="this.classList.add('loaded')" alt="${Utils.escape(p.name)}">
+                        <img src="${Utils.escapeAttr(p.img)}" class="p-img" loading="lazy" onload="this.classList.add('loaded')" alt="${Utils.escape(p.name)}">
                         <div class="stock-badge ${isLow ? 'low' : ''}">${p.stock > 0 ? (isLow ? `Low Stock: ${p.stock}` : 'In Stock') : 'Sold Out'}</div>
                     </div>
                     <div class="p-info">
@@ -1297,9 +1303,9 @@
                         <h3 class="p-title">${Utils.escape(p.name)}</h3>
                         <div class="p-price">${Utils.formatMoney(p.price)}</div>
                         <div class="p-actions">
-                            <button class="btn btn-sm btn-primary btn-block ${p.stock <= 0 ? 'btn-disabled' : ''}" onclick="event.stopPropagation(); app.commerce.add({id:${p.id}, name:'${Utils.escape(p.name)}', price:${p.price}, img:'${p.img}'})">Add</button>
-                            <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); app.commerce.toggleWish({id:${p.id}, name:'${Utils.escape(p.name)}', price:${p.price}, img:'${p.img}'})"><i class="fa-regular fa-heart"></i></button>
-                            <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); app.commerce.addToCompare({id:${p.id}, name:'${Utils.escape(p.name)}', price:${p.price}, img:'${p.img}'})"><i class="fa-solid fa-code-compare"></i></button>
+                            <button class="btn btn-sm btn-primary btn-block ${p.stock <= 0 ? 'btn-disabled' : ''}" onclick="event.stopPropagation(); app.commerce.add({id:${p.id}, name:'${Utils.escapeJs(p.name)}', price:${p.price}, img:'${Utils.escapeJs(p.img)}'})">Add</button>
+                            <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); app.commerce.toggleWish({id:${p.id}, name:'${Utils.escapeJs(p.name)}', price:${p.price}, img:'${Utils.escapeJs(p.img)}'})"><i class="fa-regular fa-heart"></i></button>
+                            <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); app.commerce.addToCompare({id:${p.id}, name:'${Utils.escapeJs(p.name)}', price:${p.price}, img:'${Utils.escapeJs(p.img)}'})"><i class="fa-solid fa-code-compare"></i></button>
                         </div>
                     </div>
                 </div>
@@ -1377,7 +1383,7 @@
             fullProducts.forEach(p => {
                 html += '<div class="compare-column">';
                 html += `<div class="compare-cell" style="height:250px; text-align:center;">
-                            <img src="${p.img}" class="compare-img">
+                            <img src="${Utils.escapeAttr(p.img)}" class="compare-img">
                             <div style="margin-top:10px; font-weight:700;">${Utils.escape(p.name)}</div>
                          </div>`;
                 html += `<div class="compare-cell text-accent font-tech">${Utils.formatMoney(p.price)}</div>`;
@@ -1389,7 +1395,7 @@
                 });
                 
                 html += `<div class="compare-cell">
-                            <button class="btn btn-sm btn-primary" onclick="app.commerce.add({id:${p.id}, name:'${Utils.escape(p.name)}', price:${p.price}, img:'${p.img}'})"><i class="fa-solid fa-cart-plus"></i></button>
+                            <button class="btn btn-sm btn-primary" onclick="app.commerce.add({id:${p.id}, name:'${Utils.escapeJs(p.name)}', price:${p.price}, img:'${Utils.escapeJs(p.img)}'})"><i class="fa-solid fa-cart-plus"></i></button>
                             <button class="btn btn-sm btn-danger" onclick="app.commerce.removeFromCompare(${p.id})"><i class="fa-solid fa-times"></i></button>
                          </div>`;
                 html += '</div>';
@@ -1624,10 +1630,13 @@
                         
                         if(images.length > 0) {
                             gallery.innerHTML = images.map((img, i) => `
-                                <div class="gallery-thumb ${i===0?'active':''}" onclick="app.ui.switchImage('${img}', this)">
-                                    <img src="${img}" loading="lazy" alt="Product image ${i+1}">
+                                <div class="gallery-thumb ${i===0?'active':''}" data-src="${Utils.escapeAttr(img)}" data-index="${i}">
+                                    <img src="${Utils.escapeAttr(img)}" loading="lazy" alt="Product image ${i+1}">
                                 </div>
                             `).join('');
+                            gallery.querySelectorAll('.gallery-thumb').forEach((thumb) => {
+                                thumb.addEventListener('click', () => app.ui.switchImage(thumb.dataset.src, thumb));
+                            });
                         } else gallery.innerHTML = '';
                         
                         app.ui.renderReviews(pid);

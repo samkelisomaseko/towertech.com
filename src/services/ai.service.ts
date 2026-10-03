@@ -103,7 +103,7 @@ export async function processAiIntent(text: string, _ctx: AiContext): Promise<Ai
     if (matches.length >= 2) {
       const ids = [...new Set(matches.map((m) => m.id))].slice(0, 4);
       return {
-        message: `Comparing <strong>${matches.map((m) => m.name).join(" & ")}</strong>. <br><a href="#compare" class="btn-link">Open Comparison</a>`,
+        message: `Comparing <strong>${matches.map((m) => escapeHtml(m.name)).join(" & ")}</strong>. <br><a href="#compare" class="btn-link">Open Comparison</a>`,
         action: { compare: ids, navigate: "compare" }
       };
     }

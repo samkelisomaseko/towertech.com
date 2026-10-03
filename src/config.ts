@@ -1,13 +1,33 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const DEV_JWT_SECRET = "dev-secret-change-me-in-production-0123456789";
+const DEV_ADMIN_PASSWORD = "towertechIT31A";
+
+const optionalUrl = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().url().optional()
+);
+
+const envBoolean = (defaultValue: boolean) =>
+  z.preprocess(
+    (value) => (value === undefined || value === "" ? defaultValue : value === true || value === "true"),
+    z.boolean()
+  );
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   APP_URL: z.string().url().default("http://localhost:3000"),
   DATABASE_URL: z.string().min(1),
-  JWT_SECRET: z.string().min(32).default("dev-secret-change-me-in-production-0123456789"),
+  SUPABASE_DATABASE_URL: z.string().min(1).optional(),
+  JWT_SECRET: z
+    .string()
+    .min(48, "JWT_SECRET must be a unique random string of at least 48 characters.")
+    .refine((value) => value !== DEV_JWT_SECRET, "JWT_SECRET must not use the development default."),
   JWT_EXPIRES_IN: z.string().default("7d"),
+  JWT_ISSUER: z.string().min(1).default("towertech"),
+  JWT_AUDIENCE: z.string().min(1).default("towertech-app"),
   COOKIE_SECURE: z
     .string()
     .transform((v) => v === "true")
@@ -17,14 +37,20 @@ const envSchema = z.object({
   TRUST_PROXY: z.coerce.number().default(1),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   RATE_LIMIT_MAX: z.coerce.number().default(200),
+  AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().default(20),
+  DB_AUTO_MIGRATE: envBoolean(true),
+  DB_AUTO_SEED: envBoolean(true),
   ADMIN_EMAIL: z.string().email().default("admin@towertech.com"),
-  ADMIN_PASSWORD: z.string().min(8).default("towertechIT31A"),
+  ADMIN_PASSWORD: z
+    .string()
+    .min(12, "ADMIN_PASSWORD must be at least 12 characters.")
+    .refine((value) => value !== DEV_ADMIN_PASSWORD, "ADMIN_PASSWORD must not use the development default."),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().optional().default(587),
+  SMTP_PORT: z.preprocess((value) => (value === "" ? undefined : value), z.coerce.number().optional()).default(587),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional().default("TowerTech <no-reply@towertech.sz>"),
@@ -36,17 +62,18 @@ const envSchema = z.object({
   MOMO_SUBSCRIPTION_KEY: z.string().optional(),
   MOMO_API_USER: z.string().optional(),
   MOMO_API_KEY: z.string().optional(),
-  MOMO_CALLBACK_URL: z.string().url().optional(),
+  MOMO_CALLBACK_URL: optionalUrl,
   // InstaCash gateway (endpoint + API key configured by the merchant). No public API spec exists,
   // so this stays configurable: the merchant supplies the real collection endpoint + key.
-  INSTACASH_ENDPOINT: z.string().url().optional(),
+  INSTACASH_ENDPOINT: optionalUrl,
   INSTACASH_API_KEY: z.string().optional()
 });
 
-const DEV_JWT_SECRET = "dev-secret-change-me-in-production-0123456789";
-const DEV_ADMIN_PASSWORD = "towertechIT31A";
+export function parseEnv(source: Record<string, string | undefined> = process.env) {
+  return envSchema.safeParse(source);
+}
 
-const parsed = envSchema.safeParse(process.env);
+const parsed = parseEnv();
 
 if (!parsed.success) {
   // eslint-disable-next-line no-console

@@ -37,7 +37,7 @@ export function createApp(): Express {
   // Raw body for Stripe webhook signature verification — must run BEFORE express.json(),
   // otherwise the JSON parser consumes the stream and the signature check gets an empty body.
   app.use("/api/payments/webhook/stripe", express.raw({ type: "application/json" }), (req, _res, next) => {
-    (req as any).rawBody = req.body;
+    (req as { rawBody?: unknown }).rawBody = req.body;
     next();
   });
   app.use(express.json({ limit: "1mb" }));

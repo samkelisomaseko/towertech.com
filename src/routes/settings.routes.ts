@@ -1,6 +1,21 @@
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../lib/http.js";
+import {
+  assertWritableSettings,
+  buildPublicSettings,
+  getPaymentAvailability
+} from "../services/payment-credentials.js";
+export {
+  MANAGED_ENV_SECRETS,
+  MANAGED_SETTING_SECRET_KEYS,
+  PUBLIC_SETTINGS,
+  assertWritableSettings,
+  buildPublicSettings,
+  getPaymentAvailability,
+  isManagedSecretKey
+} from "../services/payment-credentials.js";
+export type { PaymentAvailability, PaymentCredentials, PublicSettingRow } from "../services/payment-credentials.js";
 import { validateBody } from "../middleware/validate.js";
 import { requireAdmin } from "../middleware/auth.js";
 import { db } from "../db/index.js";
@@ -10,26 +25,21 @@ import { env } from "../config.js";
 
 const router = Router();
 
-// Public whitelist of settings safe to expose to the client.
-const PUBLIC_SETTINGS = new Set(["hero_config", "stripeKey", "site_name", "currency"]);
-
 router.get(
   "/public",
   asyncHandler(async (_req, res) => {
     const rows = await db.select().from(settings);
-    const out: Record<string, string> = {};
-    for (const s of rows) {
-      if (PUBLIC_SETTINGS.has(s.key)) out[s.key] = String(s.value);
-    }
-    // Expose which payment rails are actually configured so the client can
-    // disable unusable options (without leaking any secrets).
-    const has = (key: string) => rows.some((s) => s.key === key && String(s.value) !== "" && String(s.value) !== "********");
-    out.payments = JSON.stringify({
-      card: has("stripeKey") || !!env.STRIPE_PUBLISHABLE_KEY,
-      momo: has("momoSubscriptionKey") && has("momoApiUser") && has("momoApiKey"),
-      instacash: has("instaEndpoint") && has("instaApiKey")
+    const availability = getPaymentAvailability({
+      stripePublishableKey: env.STRIPE_PUBLISHABLE_KEY,
+      momoSubscriptionKey: env.MOMO_SUBSCRIPTION_KEY,
+      momoApiUser: env.MOMO_API_USER,
+      momoApiKey: env.MOMO_API_KEY,
+      instacashEndpoint: env.INSTACASH_ENDPOINT,
+      instacashApiKey: env.INSTACASH_API_KEY
     });
-    res.json({ settings: out });
+    res.json({
+      settings: buildPublicSettings(rows, availability, env.STRIPE_PUBLISHABLE_KEY)
+    });
   })
 );
 
@@ -47,6 +57,7 @@ router.put(
   requireAdmin,
   validateBody(z.record(z.string(), z.unknown())),
   asyncHandler(async (req, res) => {
+    assertWritableSettings(req.body as Record<string, unknown>);
     for (const [key, value] of Object.entries(req.body)) {
       if (isSecret(key) && typeof value === "string" && value === "********") continue; // unchanged
       await db
@@ -74,7 +85,9 @@ function isSecret(key: string): boolean {
 }
 
 function maskSecrets(key: string, value: string): string {
-  if (isSecret(key) && value.length > 4) return "********";
+  // Every secret-looking key is masked regardless of value length — a short
+  // webhook secret in the clear is still the whole secret.
+  if (isSecret(key)) return "********";
   return value;
 }
 
