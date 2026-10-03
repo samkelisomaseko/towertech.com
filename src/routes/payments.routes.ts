@@ -3,7 +3,9 @@ import { getMomoTransactionStatus, verifyStripeWebhook } from "../services/payme
 import {
   decideInstaCashWebhookAction,
   decideMomoWebhookAction,
-  isMomoReferenceId
+  firstHeaderValue,
+  isMomoReferenceId,
+  stripeAmountMatchesOrder
 } from "../services/payment-webhooks.js";
 import { releaseReservedOrder } from "../services/order.service.js";
 import { db } from "../db/index.js";
@@ -15,10 +17,7 @@ import { logger } from "../lib/logger.js";
 const router = Router();
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return undefined;
+  return firstHeaderValue(...values);
 }
 
 async function transitionOrderToPaid(orderId: string): Promise<boolean> {
@@ -54,9 +53,40 @@ router.post(
     const event = await verifyStripeWebhook(rawBodyText, signature);
 
     if (event.type === "payment_intent.succeeded" || event.type === "checkout.session.completed") {
-      const pi = event.data.object as { metadata?: { orderId?: string; order_id?: string } };
-      const orderId = pi.metadata?.orderId ?? pi.metadata?.order_id;
-      if (orderId) {
+      const obj = event.data.object as {
+        metadata?: { orderId?: string; order_id?: string };
+        amount_received?: unknown;
+        amount_total?: unknown;
+        payment_status?: unknown;
+      };
+      const orderId = obj.metadata?.orderId ?? obj.metadata?.order_id;
+      if (!orderId) {
+        logger.warn("Stripe webhook ignored: no orderId in metadata");
+        res.json({ received: true });
+        return;
+      }
+      // checkout.sessions carry amount_total (not amount_received) and must be paid.
+      if (event.type === "checkout.session.completed" && obj.payment_status !== "paid") {
+        logger.warn({ orderId, payment_status: obj.payment_status }, "Stripe checkout session not paid; order left pending");
+        res.json({ received: true });
+        return;
+      }
+      const amountCents = event.type === "checkout.session.completed" ? obj.amount_total : obj.amount_received;
+      const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
+      if (!order) {
+        logger.warn({ orderId }, "Stripe webhook referenced unknown order");
+        res.json({ received: true });
+        return;
+      }
+      if (!stripeAmountMatchesOrder(amountCents, order.total)) {
+        logger.warn(
+          { orderId, amountCents, total: order.total },
+          "Stripe webhook amount does not match order total; order left pending"
+        );
+        res.json({ received: true, reconciliation: "mismatch" });
+        return;
+      }
+      {
         const transitioned = await transitionOrderToPaid(orderId);
         logger.info({ orderId, transitioned }, "Stripe webhook processed");
       }

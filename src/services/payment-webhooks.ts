@@ -41,6 +41,34 @@ export function normalizeMomoProviderStatus(status: unknown): string {
 }
 
 /**
+ * First usable value from header-like inputs. Node collapses duplicate headers
+ * into arrays — take the first non-empty entry instead of throwing or dropping
+ * the whole header (which previously surfaced as a 500 downstream).
+ */
+export function firstHeaderValue(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (typeof entry === "string" && entry.trim()) return entry.trim();
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Compare a Stripe amount (integer cents) against the order total with a 1-cent
+ * tolerance for rounding. Null, missing, or non-finite amounts FAIL CLOSED —
+ * an unverifiable payment must never mark an order paid.
+ */
+export function stripeAmountMatchesOrder(amountCents: unknown, orderTotal: number | string): boolean {
+  if (typeof amountCents !== "number" || !Number.isFinite(amountCents)) return false;
+  const expected = Math.round(Number(orderTotal) * 100);
+  if (!Number.isFinite(expected)) return false;
+  return Math.abs(Math.round(amountCents) - expected) <= 1;
+}
+/**
  * Every MoMo callback that carries a reference is a verification request. Even a
  * FAILED status must be confirmed with MTN before changing order state, because
  * the callback itself is unauthenticated.

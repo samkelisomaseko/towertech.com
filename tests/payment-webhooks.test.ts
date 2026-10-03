@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   decideInstaCashWebhookAction,
   decideMomoWebhookAction,
+  firstHeaderValue,
   isMomoReferenceId,
-  normalizeMomoProviderStatus
+  normalizeMomoProviderStatus,
+  stripeAmountMatchesOrder
 } from "../src/services/payment-webhooks.js";
 
 describe("MoMo webhook decisions", () => {
@@ -40,5 +42,40 @@ describe("InstaCash webhook decisions", () => {
 
   it("ignores callbacks without a reference", () => {
     expect(decideInstaCashWebhookAction({ status: "SUCCESS" })).toBe("ignore");
+  });
+});
+
+describe("Stripe amount verification (Luna regressions)", () => {
+  it("fails closed on null/undefined/non-finite amounts", () => {
+    expect(stripeAmountMatchesOrder(null, 100)).toBe(false);
+    expect(stripeAmountMatchesOrder(undefined, 100)).toBe(false);
+    expect(stripeAmountMatchesOrder("10000", 100)).toBe(false);
+    expect(stripeAmountMatchesOrder(NaN, 100)).toBe(false);
+    expect(stripeAmountMatchesOrder(Infinity, 100)).toBe(false);
+  });
+
+  it("accepts exact cent matches and 1-cent rounding", () => {
+    expect(stripeAmountMatchesOrder(10000, 100)).toBe(true);
+    expect(stripeAmountMatchesOrder(10001, 100)).toBe(true);
+    expect(stripeAmountMatchesOrder(9999, 100)).toBe(true);
+  });
+
+  it("rejects underpayment beyond 1 cent", () => {
+    expect(stripeAmountMatchesOrder(9900, 100)).toBe(false);
+    expect(stripeAmountMatchesOrder(5000, 100)).toBe(false);
+    expect(stripeAmountMatchesOrder(0, 100)).toBe(false);
+  });
+});
+
+describe("firstHeaderValue (array-header regression)", () => {
+  it("takes the first usable entry from an array header", () => {
+    expect(firstHeaderValue(["", "  ", "abc"])).toBe("abc");
+    expect(firstHeaderValue(["x", "y"])).toBe("x");
+  });
+
+  it("returns undefined for empty arrays and non-strings", () => {
+    expect(firstHeaderValue([])).toBeUndefined();
+    expect(firstHeaderValue([123, null])).toBeUndefined();
+    expect(firstHeaderValue(undefined)).toBeUndefined();
   });
 });

@@ -96,12 +96,31 @@ function generateOrderId(): string {
  *     use are not permanently consumed by an unpaid order.
  *  6. Enqueues a confirmation email + in-app notification.
  */
+/**
+ * Merge duplicate product lines by summing quantities, so stock checks see the
+ * true combined quantity. Pure — unit-testable without a database.
+ */
+export function mergeCartLines(lines: Array<{ productId: number; qty: number }>): Array<{
+  productId: number;
+  qty: number;
+}> {
+  const merged = new Map<number, number>();
+  for (const line of lines) {
+    merged.set(line.productId, (merged.get(line.productId) ?? 0) + line.qty);
+  }
+  return [...merged].map(([productId, qty]) => ({ productId, qty }));
+}
+
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
   if (!input.items.length) throw new AppError(400, "Cart is empty.", "EMPTY_CART");
 
   const orderId = generateOrderId();
   const shippingEmail = (input.shipping.email || input.userId || "").toLowerCase();
   const normalizedCouponCode = input.couponCode?.trim().toUpperCase();
+
+  // Duplicate lines for the same product must not each pass a stock check
+  // their combined quantity fails — merge first, then validate.
+  const items = mergeCartLines(input.items);
 
   // -- Validate products without holding row locks outside the transaction --
   const lockedProducts: Array<{
@@ -112,7 +131,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     stock: number;
     qty: number;
   }> = [];
-  for (const line of input.items) {
+  for (const line of items) {
     if (!line.productId || !Number.isInteger(line.qty) || line.qty < 1) {
       throw new AppError(400, "Invalid cart line.", "INVALID_LINE");
     }
@@ -134,7 +153,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   // -- Persist the reservation in a transaction --
   const result = await db.transaction(async (tx) => {
     // Lock and decrement stock within the transaction for atomicity.
-    for (const line of input.items) {
+    for (const line of items) {
       const [row] = await tx.select().from(products).where(eq(products.id, line.productId)).for("update");
       if (!row) throw new NotFoundError("Product");
       if (row.stock < line.qty) {

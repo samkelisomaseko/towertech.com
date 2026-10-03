@@ -85,7 +85,9 @@ function isSecret(key: string): boolean {
 }
 
 function maskSecrets(key: string, value: string): string {
-  if (isSecret(key) && value.length > 4) return "********";
+  // Every secret-looking key is masked regardless of value length — a short
+  // webhook secret in the clear is still the whole secret.
+  if (isSecret(key)) return "********";
   return value;
 }
 
