@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: towertech
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: towertech-db
+          property: connectionString
+      - key: APP_URL
+        value: https://towertech.onrender.com
+      - key: CORS_ORIGIN
+        value: https://towertech.onrender.com
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: DB_AUTO_MIGRATE
+        value: "true"
+      - key: DB_AUTO_SEED
+        value: "true"
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_EMAIL
+        value: admin@towertech.com
+      - key: ADMIN_PASSWORD
+        sync: false
+
+databases:
+  - name: towertech-db
+    plan: free
+    databaseName: towertech

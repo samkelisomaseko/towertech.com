@@ -17,8 +17,8 @@ logs/
 *.log
 npm-debug.log*
 
-# Drizzle
-drizzle/meta/
+# Local portable Postgres data
+.local-pg/
 
 # OS / Editor
 .DS_Store
