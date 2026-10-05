@@ -870,11 +870,12 @@
         }
         
         async addCoupon() {
-            const code = Utils.$('#adm-c-code').value.toUpperCase();
-            const val = parseFloat(Utils.$('#adm-c-val').value);
+            const code = Utils.$('#adm-c-code').value.toUpperCase().trim();
+            let val = parseFloat(Utils.$('#adm-c-val').value);
             if (!code || isNaN(val)) return app.ui.toast("Invalid input", "error");
-            
-            await app.db.put('coupons', { code, discount: val, desc: `${val*100}% Discount` });
+            if (val > 1) val = val / 100; // allow whole percentages: 20 -> 20%
+            if (!(val > 0) || val > 0.99) return app.ui.toast("Discount must be 1-99%", "error");
+            await app.db.put('coupons', { code, discount: val, desc: `${Math.round(val*100)}% Discount` });
             this.render();
             app.ui.toast("Coupon added", "success");
             Utils.$('#adm-c-code').value = '';
@@ -1266,6 +1267,7 @@
 
         switchImage(src, el) {
             const main = Utils.$('#pd-img');
+            main.onerror = () => { main.onerror = null; main.src = Utils.placeholderImg(); };
             gsap.to(main, {opacity: 0.5, duration: 0.1, onComplete: () => {
                 main.src = src;
                 gsap.to(main, {opacity: 1, duration: 0.2});
@@ -1603,8 +1605,9 @@
                     const p = await app.db.get('products', pid);
                     if (!p) return app.router.go('404');
                     if (p) {
-                        Utils.$('#pd-img').src = p.img;
-                        Utils.$('#pd-name').textContent = p.name;
+                        const pdImg = Utils.$('#pd-img');
+                        pdImg.onerror = () => { pdImg.onerror = null; pdImg.src = Utils.placeholderImg(); };
+                        pdImg.src = p.img || Utils.placeholderImg();
                         Utils.$('#pd-sku').textContent = `SKU: ${p.sku || 'N/A'}`;
                         Utils.$('#pd-price').textContent = Utils.formatMoney(p.price);
                         Utils.$('#pd-stock').textContent = p.stock > 0 ? `In Stock: ${p.stock}` : 'Sold Out';
