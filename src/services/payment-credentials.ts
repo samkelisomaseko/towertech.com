@@ -8,7 +8,8 @@ export const MANAGED_ENV_SECRETS = new Set([
   "MOMO_SUBSCRIPTION_KEY",
   "MOMO_API_USER",
   "MOMO_API_KEY",
-  "INSTACASH_API_KEY"
+  "INSTACASH_API_KEY",
+  "AI_API_KEY"
 ]);
 
 export const MANAGED_SETTING_SECRET_KEYS = new Set([
@@ -21,7 +22,10 @@ export const MANAGED_SETTING_SECRET_KEYS = new Set([
 ]);
 
 // Public whitelist of settings safe to expose to the client.
-export const PUBLIC_SETTINGS = new Set(["hero_config", "site_name", "currency"]);
+export const PUBLIC_SETTINGS = new Set(["hero_config", "site_name", "currency", "ai_model", "ai_enabled"]);
+
+// Admin-configurable AI settings keys (stored in settings table, ai_api_key masked).
+export const AI_SETTING_KEYS = new Set(["ai_model", "ai_api_key", "ai_enabled"]);
 
 export interface PublicSettingRow {
   key: string;

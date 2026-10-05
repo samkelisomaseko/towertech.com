@@ -66,7 +66,10 @@ const envSchema = z.object({
   // InstaCash gateway (endpoint + API key configured by the merchant). No public API spec exists,
   // so this stays configurable: the merchant supplies the real collection endpoint + key.
   INSTACASH_ENDPOINT: optionalUrl,
-  INSTACASH_API_KEY: z.string().optional()
+  INSTACASH_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().optional().default("deepseek/deepseek-chat"),
+  AI_API_KEY: z.string().optional(),
+  AI_ENABLED: envBoolean(true)
 });
 
 export function parseEnv(source: Record<string, string | undefined> = process.env) {

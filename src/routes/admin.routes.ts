@@ -35,4 +35,9 @@ router.get(
   })
 );
 
+router.get("/users", requireAdmin, asyncHandler(async (_req, res) => {
+  const rows = await db.select().from(users).orderBy(users.createdAt);
+  res.json({ users: rows.map((u) => ({ email: u.email, name: u.name, role: u.role, status: u.status, createdAt: u.createdAt })) });
+}));
+
 export default router;

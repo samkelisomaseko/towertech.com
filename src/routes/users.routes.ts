@@ -14,7 +14,7 @@ router.get(
   "/",
   requireAdmin,
   asyncHandler(async (_req, res) => {
-    const rows = await db.select().from(users).orderBy(users.createdAt);
+    const rows = await db.select().from(users).orderBy(desc(users.createdAt));
     res.json({
       users: rows.map((u) => ({
         email: u.email,

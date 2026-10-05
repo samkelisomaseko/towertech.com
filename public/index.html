@@ -1,4 +1,4 @@
-﻿<!--
+<!--
 ================================================================================
 TOWERTECH ULTIMATE - PRODUCTION SYSTEM MANIFEST
 ================================================================================
@@ -687,6 +687,16 @@ ARCHITECT: Senior Full-Stack Engineer
                         <div class="form-group">
                             <label class="form-label">Gateway Endpoint</label>
                             <input type="text" autocomplete="off" class="input-field" id="set-insta-endpoint" onchange="app.admin.saveSetting('instaEndpoint', this.value)">
+                        </div>
+                    <div style="margin-top:20px; border-top:1px solid var(--glass-border); padding-top:15px;">
+                        <h5 style="color:var(--primary); margin-bottom:15px;">AI Assistant</h5>
+                        <div class="form-group">
+                            <label class="form-label">AI Model</label>
+                            <input type="text" autocomplete="off" class="input-field" id="set-ai-model" placeholder="e.g. orcarouter/deepseek/deepseek-v4-flash-free" onchange="app.admin.saveSetting('aiModel', this.value)">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">AI API Key (OpenRouter)</label>
+                            <input type="password" autocomplete="off" class="input-field" id="set-ai-apikey" placeholder="sk-or-v1-..." onchange="app.admin.saveSetting('aiApiKey', this.value)">
                         </div>
                     </div>
                     
