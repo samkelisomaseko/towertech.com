@@ -6,6 +6,7 @@
         $: (s) => document.querySelector(s),
         $$: (s) => document.querySelectorAll(s),
         formatMoney: (n) => 'E' + parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        placeholderImg: () => 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="100%" height="100%" fill="#0b0b14"/><text x="50%" y="52%" font-family="Arial" font-size="42" fill="#00f3ff" text-anchor="middle">TOWERTECH</text></svg>'),
         uuid: () => Date.now().toString(36) + Math.random().toString(36).substr(2),
         escape: (str) => {
             if (typeof str !== 'string') return str;
@@ -938,7 +939,7 @@
             
             const rawImgs = Utils.$('#mp-imgs').value.trim().split('\n');
             const cleanImgs = rawImgs.map(x => x.trim()).filter(x => x.length > 0);
-            const mainImg = cleanImgs.length > 0 ? cleanImgs[0] : 'placeholder.jpg';
+            const mainImg = cleanImgs.length > 0 ? cleanImgs[0] : '';
 
             const specText = Utils.$('#mp-specs').value;
             const specs = {};
@@ -1300,7 +1301,7 @@
             return `
                 <div class="glass-panel product-card" onclick="app.router.go('product', {id: ${p.id}})">                    
                     <div class="p-img-container">
-                        <img src="${Utils.escapeAttr(p.img)}" class="p-img" loading="lazy" onload="this.classList.add('loaded')" alt="${Utils.escape(p.name)}">
+                        <img src="${p.img ? Utils.escapeAttr(p.img) : Utils.placeholderImg()}" class="p-img" loading="lazy" onload="this.classList.add('loaded')" onerror="this.onerror=null;this.src=Utils.placeholderImg();this.classList.add('loaded')" alt="${Utils.escape(p.name)}">
                         <div class="stock-badge ${isLow ? 'low' : ''}">${p.stock > 0 ? (isLow ? `Low Stock: ${p.stock}` : 'In Stock') : 'Sold Out'}</div>
                     </div>
                     <div class="p-info">
