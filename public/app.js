@@ -210,29 +210,34 @@
         }
 
         async getAllSettings() {
-            const isAdmin = app.auth.currentUser && app.auth.currentUser.role === 'admin';
+            // Public settings first — this works for every visitor. The admin
+            // endpoint is best-effort: a 403 for non-admins must not wipe out
+            // the public values (that used to freeze the homepage hero on defaults).
+            let pubSettings = {};
             try {
-                const [data, pub] = await Promise.all([
-                    this._fetch('/settings'),
-                    this._fetch('/settings/public')
-                ]);
-                const raw = (data.settings || []).map(s => ({ id: s.key, value: s.value }));
-                const pubMap = Object.entries(pub.settings || {}).map(([key, value]) => ({ id: key, value }));
-                // Overlay public (unmasked) values so whitelisted keys work for every user.
-                for (const p of pubMap) {
-                    const idx = raw.findIndex(r => r.id === p.id);
-                    if (idx >= 0) raw[idx] = p; else raw.push(p);
+                const pub = await this._fetch('/settings/public');
+                pubSettings = pub.settings || {};
+            } catch (e) { /* offline — fall through with empty public set */ }
+            let raw = [];
+            try {
+                const data = await this._fetch('/settings');
+                raw = (data.settings || []).map(s => ({ id: s.key, value: s.value }));
+            } catch (e) { /* non-admin (403) or offline — public values still apply */ }
+            const pubMap = Object.entries(pubSettings).map(([key, value]) => ({ id: key, value }));
+            // Overlay public (unmasked) values so whitelisted keys work for every user.
+            for (const p of pubMap) {
+                const idx = raw.findIndex(r => r.id === p.id);
+                if (idx >= 0) raw[idx] = p; else raw.push(p);
+            }
+            const out = raw.map(s => {
+                let value = s.value;
+                if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('"'))) {
+                    try { value = JSON.parse(value); } catch (e) { /* keep string */ }
                 }
-                const out = raw.map(s => {
-                    let value = s.value;
-                    if (typeof value === 'string' && value.startsWith('{')) {
-                        try { value = JSON.parse(value); } catch (e) { /* keep string */ }
-                    }
-                    return { id: s.id, value };
-                });
-                this._publicSettings = pub.settings || {};
-                return out;
-            } catch (e) { return []; }
+                return { id: s.id, value };
+            });
+            this._publicSettings = pubSettings;
+            return out;
         }
 
         async _getUser(email) {
@@ -1574,10 +1579,10 @@
                         });
                     
                     const hero = await app.db.get('settings', 'hero_config');
-                    if (hero) {
-                        Utils.$('#hero-img').src = hero.value.img;
-                        Utils.$('#hero-title').innerText = hero.value.title;
-                        Utils.$('#hero-desc').innerText = hero.value.desc;
+                    if (hero && hero.value && typeof hero.value === 'object') {
+                        if (hero.value.img) Utils.$('#hero-img').src = hero.value.img;
+                        if (hero.value.title) Utils.$('#hero-title').innerText = hero.value.title;
+                        if (hero.value.desc) Utils.$('#hero-desc').innerText = hero.value.desc;
                     }
                     break;
                 case 'shop':
