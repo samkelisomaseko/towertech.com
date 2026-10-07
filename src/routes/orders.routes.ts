@@ -98,6 +98,12 @@ router.post(
   validateParams(orderParam),
   validateBody(z.object({ message: z.string().min(1).max(2000) })),
   asyncHandler(async (req, res) => {
+    const order = await getOrderById(req.params.id);
+    if (!order) throw new NotFoundError("Order");
+    if (req.user!.role !== "admin" && order.userId !== req.user!.sub) {
+      res.status(403).json({ error: "You do not have access to this order.", code: "FORBIDDEN" });
+      return;
+    }
     res.json({ reply: await processAiIntent(req.body.message, {}) });
   })
 );

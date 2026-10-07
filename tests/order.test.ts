@@ -38,4 +38,23 @@ describe("computeTotals", () => {
     const t = computeTotals(100, 10, "CYBER20");
     expect(t.couponCode).toBe("CYBER20");
   });
+
+  it("correctly totals a multi-qty line (price × qty)", () => {
+    // Simulates the subtotal from a cart line with qty=2, price=25.00
+    const lineSubtotal = 2 * 25.0;
+    expect(lineSubtotal).toBe(50);
+    const t = computeTotals(lineSubtotal, 0);
+    expect(t.subtotal).toBe(50);
+    expect(t.tax).toBe(7.5);
+    expect(t.total).toBe(57.5);
+  });
+
+  it("correctly totals mixed-qty lines", () => {
+    // 2× $30.00 + 1× $15.00 = $75.00
+    const subtotal = 2 * 30.0 + 1 * 15.0;
+    expect(subtotal).toBe(75);
+    const t = computeTotals(subtotal, 0);
+    expect(t.subtotal).toBe(75);
+    expect(t.total).toBe(75 + 75 * TAX_RATE); // 86.25
+  });
 });
