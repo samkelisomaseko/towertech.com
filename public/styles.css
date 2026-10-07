@@ -439,3 +439,85 @@
     /* Stats Typography */
     .stat-val { font-family: var(--font-display); font-weight: 700; letter-spacing: 2px; }
     .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; border-radius: var(--radius); }
+
+    /* ============================================================
+       PREMIUM RESPONSIVE PASS â€” fluid type, mobile layouts,
+       touch targets, safe-area (appended, overrides above)
+    ============================================================ */
+
+    /* Fluid root type: step down gradually instead of one cliff */
+    @media (max-width: 1024px) { html { font-size: 15px; } }
+    @media (max-width: 768px) { html { font-size: 14.5px; } }
+    @media (max-width: 480px) {
+        .btn { font-size: 0.95rem; padding: 11px 20px; letter-spacing: 1px; }
+        .input-field { font-size: 1rem; padding: 12px 14px; }
+        .icon-btn { padding: 12px; font-size: 1.35rem; }
+        .brand { font-size: 1.25rem; }
+        main { padding-top: 80px; }
+    }
+
+    /* Hero: stack early, cap image, wrap buttons */
+    #view-home .hero-flex { min-height: 80vh; display: flex; align-items: center; justify-content: space-between; gap: 40px; padding: 40px 0; flex-wrap: wrap; }
+    #view-home .hero-copy { flex: 1; min-width: 280px; }
+    #view-home .hero-cta { display: flex; gap: 20px; flex-wrap: wrap; }
+    #view-home .hero-media { flex: 1; display: flex; justify-content: center; min-width: 280px; }
+    #view-home .hero-frame { width: 100%; max-width: 400px; height: 500px; position: relative; overflow: hidden; transform: rotate(2deg); }
+    @media (max-width: 768px) {
+        #view-home .hero-flex { min-height: auto; gap: 30px; padding: 24px 0; }
+        #view-home .hero-frame { height: 320px; transform: none; }
+        #hero-title { font-size: clamp(1.9rem, 8vw, 2.5rem) !important; }
+        #view-home .hero-cta .btn { flex: 1 1 200px; }
+    }
+    @media (max-width: 480px) {
+        #view-home .hero-frame { height: 240px; }
+        #hero-desc { margin-bottom: 28px !important; }
+    }
+
+    /* Detail + checkout panels: breathing room on small screens */
+    @media (max-width: 768px) {
+        .product-detail-grid { padding: 24px !important; gap: 24px !important; }
+        .p-img-container { height: 200px; }
+        #view-checkout .glass-panel { padding: 24px !important; }
+        #view-checkout .co-duo { grid-template-columns: 1fr !important; }
+        #view-checkout .co-coupon { flex-direction: column !important; }
+        #view-checkout .co-coupon .btn { width: 100%; }
+        .cart-grid { grid-template-columns: 1fr !important; gap: 24px !important; }
+    }
+    @media (max-width: 480px) {
+        .product-detail-grid { padding: 18px !important; }
+        .p-img-container { height: 180px; }
+        #view-checkout .glass-panel { padding: 18px !important; }
+    }
+
+    /* Admin tabs: scroll instead of overflow */
+    .tabs-header { overflow-x: auto; scrollbar-width: none; }
+    .tabs-header::-webkit-scrollbar { display: none; }
+    .tab-btn { white-space: nowrap; }
+    @media (max-width: 768px) {
+        .tab-btn { padding: 12px 16px; }
+        #view-admin .glass-panel { padding: 18px !important; }
+        #view-dashboard .glass-panel { padding: 18px !important; }
+    }
+
+    /* AI panel + FAB: viewport-capped, notch-aware */
+    #ai-panel { max-height: min(500px, calc(100vh - 140px)); max-height: min(500px, calc(100dvh - 140px)); }
+    @media (max-width: 768px) {
+        #ai-fab { right: 16px; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px; }
+        #ai-panel { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); max-height: calc(100dvh - 180px); }
+    }
+
+    /* Notch / safe-area */
+    header { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+    #toast-area { bottom: calc(30px + env(safe-area-inset-bottom, 0px)); }
+
+    /* Short landscape phones */
+    @media (max-height: 500px) and (orientation: landscape) {
+        #view-home .hero-flex { min-height: auto; }
+        #view-home .hero-frame { height: 220px; }
+        #ai-panel { height: calc(100dvh - 120px); }
+        main { padding-top: 78px; }
+    }
+
+    /* Prevent media overflow everywhere */
+    img { max-width: 100%; }
+    .glass-panel { min-width: 0; }

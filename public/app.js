@@ -6,6 +6,7 @@
         $: (s) => document.querySelector(s),
         $$: (s) => document.querySelectorAll(s),
         formatMoney: (n) => 'E' + parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        placeholderImg: () => 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="100%" height="100%" fill="#0b0b14"/><text x="50%" y="52%" font-family="Arial" font-size="42" fill="#00f3ff" text-anchor="middle">TOWERTECH</text></svg>'),
         uuid: () => Date.now().toString(36) + Math.random().toString(36).substr(2),
         escape: (str) => {
             if (typeof str !== 'string') return str;
@@ -210,29 +211,34 @@
         }
 
         async getAllSettings() {
-            const isAdmin = app.auth.currentUser && app.auth.currentUser.role === 'admin';
+            // Public settings first — this works for every visitor. The admin
+            // endpoint is best-effort: a 403 for non-admins must not wipe out
+            // the public values (that used to freeze the homepage hero on defaults).
+            let pubSettings = {};
             try {
-                const [data, pub] = await Promise.all([
-                    this._fetch('/settings'),
-                    this._fetch('/settings/public')
-                ]);
-                const raw = (data.settings || []).map(s => ({ id: s.key, value: s.value }));
-                const pubMap = Object.entries(pub.settings || {}).map(([key, value]) => ({ id: key, value }));
-                // Overlay public (unmasked) values so whitelisted keys work for every user.
-                for (const p of pubMap) {
-                    const idx = raw.findIndex(r => r.id === p.id);
-                    if (idx >= 0) raw[idx] = p; else raw.push(p);
+                const pub = await this._fetch('/settings/public');
+                pubSettings = pub.settings || {};
+            } catch (e) { /* offline — fall through with empty public set */ }
+            let raw = [];
+            try {
+                const data = await this._fetch('/settings');
+                raw = (data.settings || []).map(s => ({ id: s.key, value: s.value }));
+            } catch (e) { /* non-admin (403) or offline — public values still apply */ }
+            const pubMap = Object.entries(pubSettings).map(([key, value]) => ({ id: key, value }));
+            // Overlay public (unmasked) values so whitelisted keys work for every user.
+            for (const p of pubMap) {
+                const idx = raw.findIndex(r => r.id === p.id);
+                if (idx >= 0) raw[idx] = p; else raw.push(p);
+            }
+            const out = raw.map(s => {
+                let value = s.value;
+                if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('"'))) {
+                    try { value = JSON.parse(value); } catch (e) { /* keep string */ }
                 }
-                const out = raw.map(s => {
-                    let value = s.value;
-                    if (typeof value === 'string' && value.startsWith('{')) {
-                        try { value = JSON.parse(value); } catch (e) { /* keep string */ }
-                    }
-                    return { id: s.id, value };
-                });
-                this._publicSettings = pub.settings || {};
-                return out;
-            } catch (e) { return []; }
+                return { id: s.id, value };
+            });
+            this._publicSettings = pubSettings;
+            return out;
         }
 
         async _getUser(email) {
@@ -864,11 +870,12 @@
         }
         
         async addCoupon() {
-            const code = Utils.$('#adm-c-code').value.toUpperCase();
-            const val = parseFloat(Utils.$('#adm-c-val').value);
+            const code = Utils.$('#adm-c-code').value.toUpperCase().trim();
+            let val = parseFloat(Utils.$('#adm-c-val').value);
             if (!code || isNaN(val)) return app.ui.toast("Invalid input", "error");
-            
-            await app.db.put('coupons', { code, discount: val, desc: `${val*100}% Discount` });
+            if (val > 1) val = val / 100; // allow whole percentages: 20 -> 20%
+            if (!(val > 0) || val > 0.99) return app.ui.toast("Discount must be 1-99%", "error");
+            await app.db.put('coupons', { code, discount: val, desc: `${Math.round(val*100)}% Discount` });
             this.render();
             app.ui.toast("Coupon added", "success");
             Utils.$('#adm-c-code').value = '';
@@ -933,7 +940,7 @@
             
             const rawImgs = Utils.$('#mp-imgs').value.trim().split('\n');
             const cleanImgs = rawImgs.map(x => x.trim()).filter(x => x.length > 0);
-            const mainImg = cleanImgs.length > 0 ? cleanImgs[0] : 'placeholder.jpg';
+            const mainImg = cleanImgs.length > 0 ? cleanImgs[0] : '';
 
             const specText = Utils.$('#mp-specs').value;
             const specs = {};
@@ -1260,6 +1267,7 @@
 
         switchImage(src, el) {
             const main = Utils.$('#pd-img');
+            main.onerror = () => { main.onerror = null; main.src = Utils.placeholderImg(); };
             gsap.to(main, {opacity: 0.5, duration: 0.1, onComplete: () => {
                 main.src = src;
                 gsap.to(main, {opacity: 1, duration: 0.2});
@@ -1295,7 +1303,7 @@
             return `
                 <div class="glass-panel product-card" onclick="app.router.go('product', {id: ${p.id}})">                    
                     <div class="p-img-container">
-                        <img src="${Utils.escapeAttr(p.img)}" class="p-img" loading="lazy" onload="this.classList.add('loaded')" alt="${Utils.escape(p.name)}">
+                        <img src="${p.img ? Utils.escapeAttr(p.img) : Utils.placeholderImg()}" class="p-img" loading="lazy" onload="this.classList.add('loaded')" onerror="this.onerror=null;this.src=Utils.placeholderImg();this.classList.add('loaded')" alt="${Utils.escape(p.name)}">
                         <div class="stock-badge ${isLow ? 'low' : ''}">${p.stock > 0 ? (isLow ? `Low Stock: ${p.stock}` : 'In Stock') : 'Sold Out'}</div>
                     </div>
                     <div class="p-info">
@@ -1574,10 +1582,10 @@
                         });
                     
                     const hero = await app.db.get('settings', 'hero_config');
-                    if (hero) {
-                        Utils.$('#hero-img').src = hero.value.img;
-                        Utils.$('#hero-title').innerText = hero.value.title;
-                        Utils.$('#hero-desc').innerText = hero.value.desc;
+                    if (hero && hero.value && typeof hero.value === 'object') {
+                        if (hero.value.img) Utils.$('#hero-img').src = hero.value.img;
+                        if (hero.value.title) Utils.$('#hero-title').innerText = hero.value.title;
+                        if (hero.value.desc) Utils.$('#hero-desc').innerText = hero.value.desc;
                     }
                     break;
                 case 'shop':
@@ -1597,8 +1605,9 @@
                     const p = await app.db.get('products', pid);
                     if (!p) return app.router.go('404');
                     if (p) {
-                        Utils.$('#pd-img').src = p.img;
-                        Utils.$('#pd-name').textContent = p.name;
+                        const pdImg = Utils.$('#pd-img');
+                        pdImg.onerror = () => { pdImg.onerror = null; pdImg.src = Utils.placeholderImg(); };
+                        pdImg.src = p.img || Utils.placeholderImg();
                         Utils.$('#pd-sku').textContent = `SKU: ${p.sku || 'N/A'}`;
                         Utils.$('#pd-price').textContent = Utils.formatMoney(p.price);
                         Utils.$('#pd-stock').textContent = p.stock > 0 ? `In Stock: ${p.stock}` : 'Sold Out';

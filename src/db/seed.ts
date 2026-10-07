@@ -26,14 +26,13 @@ export async function runSeed(): Promise<void> {
     })
     .onConflictDoNothing();
 
-  // Demo products (same catalog as the original single-file app)
+  // SZL starter catalog (Eswatini first-sale range, prices in Emalangeni ending 99)
   const catalog = [
-    { name: "Quantum Laptop X1", price: "1899.99", category: "Laptops", stock: 12, featured: true, img: "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=600", desc: "Flagship ultralight with quantum-core processor." },
-    { name: "Nova Smartphone S23", price: "899.99", category: "Phones", stock: 30, featured: true, img: "https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=600", desc: "6.7\" AMOLED, 108MP camera system." },
-    { name: "Aurora Earbuds Pro", price: "129.99", category: "Audio", stock: 45, featured: true, img: "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=600", desc: "ANC true wireless with spatial audio." },
-    { name: "Titan Gaming Monitor 27\"", price: "449.99", category: "Monitors", stock: 8, featured: false, img: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=600", desc: "165Hz QHD 1ms response." },
-    { name: "Pulse Smart Watch", price: "199.99", category: "Wearables", stock: 25, featured: false, img: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600", desc: "Health tracking with 14-day battery." },
-    { name: "Vertex Desktop GPU", price: "799.99", category: "Components", stock: 6, featured: false, img: "https://images.unsplash.com/photo-1591488320449-011701bb6704?w=600", desc: "Next-gen ray tracing acceleration." }
+    { name: "Aero Earbuds Lite", price: "349.99", category: "Audio", stock: 40, featured: false, img: "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=600", desc: "Budget true wireless earbuds with clear sound and charging case." },
+    { name: "Aero Earbuds Pro", price: "899.99", category: "Audio", stock: 25, featured: true, img: "https://images.unsplash.com/photo-1572569511254-d8f925fe2cbb?w=600", desc: "ANC true wireless with spatial audio and long battery." },
+    { name: "Pulse Smart Watch S1", price: "1299.99", category: "Wearables", stock: 20, featured: false, img: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600", desc: "Health tracking smart watch with 14-day battery." },
+    { name: "Volt Charger + Cable Kit", price: "299.99", category: "Accessories", stock: 60, featured: false, img: "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=600", desc: "Fast charger plus braided USB-C cable kit." },
+    { name: "Shield Phone Covers Bundle", price: "199.99", category: "Accessories", stock: 80, featured: false, img: "https://images.unsplash.com/photo-1601593346740-925612772716?w=600", desc: "Bundle of durable phone covers in assorted colours." }
   ];
 
   for (const p of catalog) {
@@ -70,8 +69,8 @@ export async function runSeed(): Promise<void> {
       key: "hero_config",
       value: JSON.stringify({
         img: "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=800",
-        title: "High-Performance\nTECHNOLOGY",
-        desc: "Electronics, computing, and accessories — delivered across Eswatini. Trusted quality, fair prices, fast delivery."
+        title: "Quality Tech,\nPriced in Emalangeni",
+        desc: "Earbuds, smart watches, chargers and accessories — priced in SZL (E) with fast delivery across Eswatini: Mbabane, Manzini and nationwide."
       })
     },
     { key: "momoEnvironment", value: env.MOMO_TARGET_ENVIRONMENT ?? "sandbox" },

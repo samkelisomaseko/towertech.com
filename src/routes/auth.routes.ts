@@ -35,7 +35,7 @@ router.post(
   authLimiter,
   validateBody(registerSchema),
   asyncHandler(async (req, res) => {
-    const { user } = await register(req.body);
+    const { user } = await register(req.body); const viaLogin = await login({email:req.body.email,password:req.body.password}); setSessionCookie(res, viaLogin.session);
     res.status(201).json({ user });
   })
 );

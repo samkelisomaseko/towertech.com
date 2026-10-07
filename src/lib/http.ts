@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from "express";
+import { fileURLToPath } from "node:url"; import { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { logger } from "./logger.js";
 
@@ -51,9 +51,7 @@ export function asyncHandler(fn: AsyncHandler): AsyncHandler {
   };
 }
 
-export function notFoundHandler(_req: Request, res: Response): void {
-  res.status(404).json({ error: "Route not found." });
-}
+export function notFoundHandler(req: Request, res: Response): void { if (req.path.startsWith("/api")) { res.status(404).json({ error: "Route not found.", code: "NOT_FOUND" }); return; } if (req.method === "GET" && req.accepts("html")) { res.status(404).sendFile("404.html", { root: fileURLToPath(new URL("../../public", import.meta.url)) }); return; } res.status(404).json({ error: "Route not found.", code: "NOT_FOUND" }); }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {

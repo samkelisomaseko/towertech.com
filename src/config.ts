@@ -66,7 +66,10 @@ const envSchema = z.object({
   // InstaCash gateway (endpoint + API key configured by the merchant). No public API spec exists,
   // so this stays configurable: the merchant supplies the real collection endpoint + key.
   INSTACASH_ENDPOINT: optionalUrl,
-  INSTACASH_API_KEY: z.string().optional()
+  INSTACASH_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().optional().default("deepseek/deepseek-chat"),
+  AI_API_KEY: z.string().optional(),
+  AI_ENABLED: envBoolean(true)
 });
 
 export function parseEnv(source: Record<string, string | undefined> = process.env) {
@@ -91,11 +94,13 @@ if (env.NODE_ENV === "production") {
   if (env.ADMIN_PASSWORD === DEV_ADMIN_PASSWORD) {
     problems.push("ADMIN_PASSWORD must be changed from the development default in production.");
   }
-  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_PUBLISHABLE_KEY || !env.STRIPE_WEBHOOK_SECRET) {
-    problems.push("STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY and STRIPE_WEBHOOK_SECRET are required in production.");
+  const stripeKeys = [env.STRIPE_SECRET_KEY, env.STRIPE_PUBLISHABLE_KEY, env.STRIPE_WEBHOOK_SECRET];
+  if (stripeKeys.some(Boolean) && !stripeKeys.every(Boolean)) {
+    problems.push("Stripe is partially configured: provide STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY and STRIPE_WEBHOOK_SECRET together, or leave all three empty to disable Stripe.");
   }
-  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
-    problems.push("SMTP_HOST, SMTP_USER and SMTP_PASS are required in production for transactional email.");
+  const smtpKeys = [env.SMTP_HOST, env.SMTP_USER, env.SMTP_PASS];
+  if (smtpKeys.some(Boolean) && !smtpKeys.every(Boolean)) {
+    problems.push("SMTP is partially configured: provide SMTP_HOST, SMTP_USER and SMTP_PASS together, or leave all three empty to disable email.");
   }
   if (env.COOKIE_SECURE === false) {
     problems.push("COOKIE_SECURE must be true in production.");
